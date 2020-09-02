@@ -56,6 +56,18 @@ namespace Bicep.Core.TypeSystem
                 case ResourceRefType _:
                     return sourceType.TypeKind == TypeKind.Resource;
 
+                case StringLiteralType _ when sourceType is StringLiteralType:
+                    // must have an exact match on the name
+                    return targetType.Name == sourceType.Name;
+
+                case PrimitiveType _ when sourceType is StringLiteralType:
+                    // string literals can be assigned to strings
+                    return targetType.Name == LanguageConstants.String.Name;
+
+                case StringLiteralType _ when sourceType is PrimitiveType:
+                    // string literals can be assigned from strings, but we need a stricter value comparison later on
+                    return sourceType.Name == LanguageConstants.String.Name;
+
                 case PrimitiveType _ when sourceType is PrimitiveType:
                     // both types are primitive
                     // compare by type name
@@ -123,6 +135,11 @@ namespace Bicep.Core.TypeSystem
                 return errors.Append(typeMismatchErrorFactory(targetType, expressionType, expression));
             }
 
+            if (expression is StringSyntax stringSyntax && targetType is StringLiteralType targetStringLiteralType)
+            {
+                return errors.Concat(GetObjectAssignmentDiagnostics(typeManager, stringSyntax, targetStringLiteralType, skipConstantCheck));
+            }
+
             // object assignability check
             if (expression is ObjectSyntax objectValue && targetType is ObjectType targetObjectType)
             {
@@ -155,6 +172,17 @@ namespace Bicep.Core.TypeSystem
                     (expectedType, actualType, errorExpression) => DiagnosticBuilder.ForPosition(errorExpression).ArrayTypeMismatch(expectedType.Name, actualType.Name),
                     skipConstantCheck,
                     skipTypeErrors: true)); 
+        }
+
+        private static IEnumerable<ErrorDiagnostic> GetStringLiteralAssignmentDiagnostics(ITypeManager typeManager, StringSyntax expression, StringLiteralType targetType)
+        {
+            if (expression.IsInterpolated())
+            {
+                // We could probably check whether it's at all possible (e.g. an interpolated string 'abc${something}' could never be assigned to 'def...').
+                // That feels like a bit of a micro-optimization - easier to just give up for now.
+                yield break;
+            }
+
         }
 
         private static IEnumerable<ErrorDiagnostic> GetObjectAssignmentDiagnostics(ITypeManager typeManager, ObjectSyntax expression, ObjectType targetType, bool skipConstantCheck)
